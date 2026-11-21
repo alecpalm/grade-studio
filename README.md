@@ -1,9 +1,101 @@
-# Grade Studio (hosted code)
+# Grade Studio
 
-The grading code for **Grade Studio**, a Gemini skill from the Boley Law Library at Lewis & Clark Law School. It drafts letter grades from anonymous exam totals under the school's maximum grade average.
+Grade Studio drafts letter grades from anonymous exam totals for Lewis & Clark Law School faculty. It keeps the class average at or below the school's maximum grade average (3.30 or 3.50). It was built by the Boley Law Library and runs inside Google Gemini as a skill.
 
-The Gemini skill's Canvas page loads `gs.js` from jsDelivr, pinned to one commit and checked with a Subresource Integrity hash. A changed file won't run.
+The professor decides every grade. Grade Studio gives a starting draft, flags the places worth a second look, and lets the professor change anything.
 
-No student data is stored here. Scores stay in the professor's Gemini Canvas.
+All of the grading logic is in one file, [`grade-studio.js`](grade-studio.js), so anyone can read exactly how a draft is made.
 
-Don't edit `gs.js` by hand. Change the source in the project and rebuild. A new commit needs a new commit hash and integrity hash in the skill.
+## How a professor uses it
+
+1. In Gemini, attach the score spreadsheet (or say "Open Grade Studio" and paste the Exam ID and Total columns).
+2. Gemini opens Grade Studio in a Canvas window with the class loaded.
+3. The professor checks the student count and total at the top, sets the maximum (3.30 or 3.50), adjusts any grade, and exports a CSV.
+
+## How the draft is made
+
+The engine is the first part of `grade-studio.js` (`GradeStudioEngine`). In plain terms:
+
+1. **Group students who must share a grade.** Students are sorted from highest to lowest total.
+   - With **Keep ties together** on (the default), students with the same total are grouped.
+   - With **Keep close scores together** set to a number of points, a student within that many points of the student above joins their group.
+2. **First draft.** Each group gets a target in grade points:
+   `maximum + 0.55 × (group total − class mean) ÷ standard deviation`, kept between 0 and 4.33.
+   The target is rounded to the nearest grade on the Lewis & Clark scale. A group never gets a better grade than the group above it.
+3. **Bring the average under the maximum.** While the class average is over the maximum, the engine lowers one group by one step at a time.
+   - It picks the group where the move hurts least: the smallest added distance from that group's target, per grade point removed.
+   - A higher score never ends up with a lower grade.
+4. **Use any room left.** While there is room under the maximum, the engine raises one group by one step.
+   - It prefers the move that uses the most room. On a tie, it picks the group closest to its target.
+   - The average never goes over the maximum.
+
+The maximum is a ceiling, not a target. Grade Studio never pushes the average up to it beyond what the scores support.
+
+### What gets flagged
+
+- **Tied score:** same total as another student.
+- **Split tie:** same total but different grades, for example after a hand edit with ties not kept together.
+- **Score inversion:** a higher total with a lower grade than the next student.
+- **Close boundary:** the next student down is in a different grade but within 2.5% of the score range (at least 0.5 points).
+
+### What gets refused
+
+When pasted or loaded scores have a problem, Grade Studio lists the problems instead of drafting. It refuses:
+
+- missing exam IDs
+- missing totals, or totals that aren't numbers (such as "INC")
+- duplicate exam IDs
+- names or emails in the ID column
+- a Total column where every value is the same
+
+A total of 0 gets a warning.
+
+## Privacy
+
+- Grade Studio has no server and stores nothing.
+- The scores stay in the professor's browser window and are never sent anywhere by this code.
+- No student data is in this repository. The test data is made up.
+
+## Making sure the code isn't changed
+
+The Gemini skill loads this file from jsDelivr, pinned to one commit, with a [Subresource Integrity](https://developer.mozilla.org/en-US/docs/Web/Security/Subresource_Integrity) hash. If the file is changed, or the hash doesn't match, the browser refuses to run it.
+
+When Gemini fills in a class, it also adds a fingerprint of the scores, computed in Python. Grade Studio checks the fingerprint before drafting, so a changed score, a changed ID or a dropped row is caught.
+
+You can check the hash yourself:
+
+```bash
+curl -s https://cdn.jsdelivr.net/gh/alecpalm/grade-studio@COMMIT/grade-studio.js | openssl dgst -sha384 -binary | base64
+```
+
+Replace `COMMIT` with the commit the skill uses. The result should match the `sha384-…` value in the skill's page.
+
+## Running the tests
+
+The tests need Node 18 or later:
+
+```bash
+node --test tests/*.test.js
+```
+
+They check:
+
+- the built-in self-test
+- that the average never goes over the maximum (1,000 random classes)
+- that a higher total never gets a lower grade
+- that ties stay together
+- the close-score gap
+- the flags
+- reading pasted text
+- that the data fingerprint matches the skill's Python
+
+## Files
+
+- `grade-studio.js` has the engine, the paste reader and the page.
+- `tests/engine.test.js` has the tests above.
+
+The styling and the Gemini skill instructions live with the skill, not here.
+
+## Changes
+
+Each change is a new commit. A new commit needs a new commit hash and integrity hash in the skill, so the skill only ever runs code that someone has reviewed. Old commits stay in place, so older copies of the skill keep working.
