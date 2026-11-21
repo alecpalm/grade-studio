@@ -49,6 +49,9 @@ const GradeStudioEngine = (() => {
     maxAverage: 3.3, // the school's maximum grade average for the course
     keepTiesTogether: true, // students with the same total get the same grade
     closeScoreGap: 0, // students within this many points stay together (0 = off)
+    highestGrade: 0, // best grade the draft may give (index into GRADES; 0 = A+)
+    lowestGrade: GRADES.length - 1, // worst grade the draft may give (12 = F)
+    setGrades: {}, // grades the professor fixed by exam ID, e.g. { "4102": 3 } for B+
   };
 
   /**
@@ -110,6 +113,25 @@ const GradeStudioEngine = (() => {
   /**
    * Drafts a grade for every student. Sets student.grade on each one.
    *
+   * Students whose grade the professor fixed (settings.setGrades) keep that
+   * grade. Everyone else is drafted so the WHOLE class still stays at or under
+   * the maximum: the fixed students' grade points come out of the class's
+   * budget first.
+   */
+  function draftGrades(students, settings) {
+    const setGrades = settings.setGrades || {};
+    const fixed = students.filter((s) => Object.prototype.hasOwnProperty.call(setGrades, s.id));
+    for (const s of fixed) s.grade = setGrades[s.id];
+    const others = students.filter((s) => !fixed.includes(s));
+    if (!others.length) return;
+    if (!fixed.length) return draftFree(students, settings);
+    const budget = settings.maxAverage * students.length - fixed.reduce((sum, s) => sum + points(s.grade), 0);
+    draftFree(others, { ...settings, maxAverage: budget / others.length });
+  }
+
+  /**
+   * Drafts grades for students with no fixed grade.
+   *
    * Step 1. First draft. Each group gets a target in grade points:
    *           maxAverage + 0.55 × (group total − class mean) / standard deviation,
    *         kept between 0 and 4.33, then rounded to the nearest grade. A group
@@ -124,9 +146,12 @@ const GradeStudioEngine = (() => {
    *         while the average stays at or below it. Each step prefers the move
    *         that uses the most room; on a tie, the one closest to its target.
    *
-   * Both loops stop after 500 steps as a safety limit.
+   * Both loops stop after 500 steps as a safety limit. No grade goes above
+   * settings.highestGrade or below settings.lowestGrade (for example, "no A+").
    */
-  function draftGrades(students, settings) {
+  function draftFree(students, settings) {
+    const highest = settings.highestGrade ?? 0;
+    const lowest = settings.lowestGrade ?? WORST;
     const groups = groupStudents(students, settings);
     const n = students.length;
     const mean = students.reduce((sum, s) => sum + s.total, 0) / n;
@@ -135,7 +160,7 @@ const GradeStudioEngine = (() => {
     // Step 1: first draft.
     groups.forEach((group, i) => {
       group.target = Math.max(0, Math.min(4.33, settings.maxAverage + (SPREAD * (group.total - mean)) / sd));
-      group.grade = nearestGrade(group.target);
+      group.grade = Math.min(lowest, Math.max(highest, nearestGrade(group.target)));
       if (i > 0) group.grade = Math.max(group.grade, groups[i - 1].grade);
     });
 
@@ -150,7 +175,7 @@ const GradeStudioEngine = (() => {
       let best = null;
       groups.forEach((group, i) => {
         const below = groups[i + 1];
-        const canLower = group.grade < WORST && (!below || group.grade + 1 <= below.grade);
+        const canLower = group.grade < lowest && (!below || group.grade + 1 <= below.grade);
         if (!canLower) return;
         const pointsRemoved = group.students.length * (points(group.grade) - points(group.grade + 1));
         const costPerPoint = (miss(group, group.grade + 1) - miss(group, group.grade)) / pointsRemoved;
@@ -167,7 +192,7 @@ const GradeStudioEngine = (() => {
       let best = null;
       groups.forEach((group, i) => {
         const above = groups[i - 1];
-        const canRaise = group.grade > 0 && (!above || above.grade <= group.grade - 1);
+        const canRaise = group.grade > highest && (!above || above.grade <= group.grade - 1);
         if (!canRaise) return;
         const pointsAdded = group.students.length * (points(group.grade - 1) - points(group.grade));
         if (pointsAdded > room + EPS) return;
@@ -401,7 +426,9 @@ if (typeof document !== 'undefined') (() => {
       </div>
       <div><label class="row" style="justify-content:space-between"><b>Keep ties together</b><input id="ties" class="sw" type="checkbox"></label><p class="mf">Same total, same grade.</p></div>
       <div><b>Keep close scores together</b><div class="row" style="margin-top:8px"><input id="gap" type="number" min="0" max="20" step=".5" style="width:70px" aria-label="Points"><span class="mf" style="margin:0">points (0 is off)</span></div></div>
+      <div><b>Grade range</b><div class="row" style="margin-top:8px"><select id="hi" aria-label="Highest grade"></select><span class="mf" style="margin:0">to</span><select id="lo" aria-label="Lowest grade"></select></div></div>
     </div>
+    <p id="asked" class="note"></p>
 
     <div class="stats">
       <div class="card stat" style="--s:var(--gB)"><div class="k">Students</div><div id="n" class="v"></div><p id="rng" class="mf"></p></div>
@@ -421,10 +448,46 @@ if (typeof document !== 'undefined') (() => {
   </section>
 </main>`);
 
+  // ---- Settings Gemini wrote into the page ----
+  /**
+   * The page Gemini makes may hold one line of settings the professor asked for:
+   *   const SET = { "maxAverage": 3.3, "keepTiesTogether": true, "closeScoreGap": 0,
+   *                 "highestGrade": "A", "lowestGrade": "C", "setGrades": { "4102": "B+" } };
+   * Every key is optional. Anything that can't be used is listed on screen, never guessed.
+   * These settings never change a score, only how grades are drafted.
+   */
+  const gradeIndex = (letter) => GRADES.findIndex((g) => g.letter === String(letter).trim().toUpperCase().replace('-', '−'));
+  function readPageSettings() {
+    const raw = typeof SET !== 'undefined' && SET && typeof SET === 'object' ? SET : {};
+    const out = {};
+    const ignored = [];
+    const asked = [];
+    for (const [key, value] of Object.entries(raw)) {
+      if (key === 'maxAverage' && Number.isFinite(+value) && +value >= 0 && +value <= 4.33) { out.maxAverage = +value; asked.push(`maximum average ${(+value).toFixed(2)}`); }
+      else if (key === 'keepTiesTogether' && typeof value === 'boolean') { out.keepTiesTogether = value; asked.push(value ? 'ties kept together' : 'ties not kept together'); }
+      else if (key === 'closeScoreGap' && Number.isFinite(+value) && +value >= 0 && +value <= 20) { out.closeScoreGap = +value; if (+value) asked.push(`scores within ${+value} points kept together`); }
+      else if (key === 'highestGrade' && gradeIndex(value) >= 0) { out.highestGrade = gradeIndex(value); asked.push(`no grade above ${GRADES[out.highestGrade].letter}`); }
+      else if (key === 'lowestGrade' && gradeIndex(value) >= 0) { out.lowestGrade = gradeIndex(value); asked.push(`no grade below ${GRADES[out.lowestGrade].letter}`); }
+      else if (key === 'setGrades' && value && typeof value === 'object') {
+        out.setGrades = {};
+        for (const [id, letter] of Object.entries(value)) {
+          if (gradeIndex(letter) >= 0) { out.setGrades[String(id).trim()] = gradeIndex(letter); asked.push(`${id} set to ${GRADES[gradeIndex(letter)].letter}`); }
+          else ignored.push(`${id}: "${letter}" isn't a grade`);
+        }
+      } else ignored.push(`${key}: ${JSON.stringify(value)}`);
+    }
+    if (out.highestGrade > (out.lowestGrade ?? GRADES.length - 1)) { ignored.push('the grade range is upside down'); delete out.highestGrade; delete out.lowestGrade; }
+    return { settings: out, asked, ignored };
+  }
+  const PAGE = readPageSettings();
+
   // ---- State ----
   /** The loaded class and current settings. Each student: { id, total, grade, order }. */
-  const state = { ...DEFAULT_SETTINGS, students: [], handEdited: false };
-  const settings = () => ({ maxAverage: state.maxAverage, keepTiesTogether: state.keepTiesTogether, closeScoreGap: state.closeScoreGap });
+  const state = { ...DEFAULT_SETTINGS, ...PAGE.settings, students: [], handEdited: false };
+  const settings = () => ({
+    maxAverage: state.maxAverage, keepTiesTogether: state.keepTiesTogether, closeScoreGap: state.closeScoreGap,
+    highestGrade: state.highestGrade, lowestGrade: state.lowestGrade, setGrades: state.setGrades,
+  });
   const START_TEXT = $('#meta').textContent;
   let sliderTimer = null;
 
@@ -471,13 +534,22 @@ if (typeof document !== 'undefined') (() => {
     $('#gap').value = state.closeScoreGap;
     document.querySelectorAll('#pre button').forEach((b) => b.classList.toggle('on', Math.abs(b.dataset.c - state.maxAverage) < 0.005));
     $('#note').textContent = state.maxAverage > 3.5 + 1e-9 ? 'Above the 3.50 ceiling: going over needs approval from the Associate Dean.' : '';
+    const gradeOptions = (selected) => GRADES.map(({ letter }, i) => `<option value="${i}"${i == selected ? ' selected' : ''}>${letter}</option>`).join('');
+    $('#hi').innerHTML = gradeOptions(state.highestGrade);
+    $('#lo').innerHTML = gradeOptions(state.lowestGrade);
+    const askedText = PAGE.asked.length ? 'Requested in Gemini: ' + PAGE.asked.join('; ') + '.' : '';
+    const ignoredText = PAGE.ignored.length ? ' Not used (not understood): ' + PAGE.ignored.join('; ') + '.' : '';
+    const missing = Object.keys(state.setGrades).filter((id) => !state.students.some((s) => s.id === id));
+    const missingText = missing.length ? ` No student with exam ID ${missing.join(', ')}.` : '';
+    $('#asked').textContent = (askedText + ignoredText + missingText).trim();
 
     drawChart(flags);
     $('#counts').innerHTML = GRADES.map(({ letter }, i) =>
       `<div class="${counts[i] ? '' : 'z'}"><i style="background:${gradeColor(i)}"></i><b>${counts[i]}</b>${letter}</div>`).join('');
 
     $('#rows').innerHTML = sorted.map((s) => {
-      const flag = flags.get(s.order);
+      const isSet = Object.prototype.hasOwnProperty.call(state.setGrades, s.id);
+      const flag = flags.get(s.order) || (isSet ? ['Grade set by request', false] : null);
       const options = GRADES.map(({ letter, points: p }, i) => `<option value="${i}"${i == s.grade ? ' selected' : ''}>${letter} (${p.toFixed(2)})</option>`).join('');
       const badge = flag ? `<span class="flag${flag[1] ? '' : ' soft'}">${flag[0]}</span>` : '';
       return `<tr data-o="${s.order}"><td>${escapeHtml(s.id)}</td><td class="num">${s.total}</td><td><select style="--c:${gradeColor(s.grade)}" data-o="${s.order}" aria-label="Grade for ${escapeHtml(s.id)}">${options}</select>${badge}</td></tr>`;
@@ -541,7 +613,7 @@ if (typeof document !== 'undefined') (() => {
     if (result.problems) return showProblems(result.problems);
     const scores = result.scores;
     const zeros = scores.filter((s) => !s[1]).length;
-    Object.assign(state, DEFAULT_SETTINGS, { handEdited: false });
+    Object.assign(state, DEFAULT_SETTINGS, PAGE.settings, { handEdited: false });
     state.students = scores.map(([id, total], order) => ({ id, total, grade: 4, order }));
     showEditNote('');
     const sum = +scores.reduce((t, s) => t + s[1], 0).toFixed(2);
@@ -582,6 +654,8 @@ if (typeof document !== 'undefined') (() => {
   $('#capn').onchange = (e) => { const n = parseFloat(e.target.value); isNaN(n) ? render() : setMaxAverage(n); };
   $('#ties').onchange = (e) => { state.keepTiesTogether = e.target.checked; redraft(); };
   $('#gap').onchange = (e) => { state.closeScoreGap = Math.max(0, Math.min(20, +e.target.value || 0)); redraft(); };
+  $('#hi').onchange = (e) => { state.highestGrade = Math.min(+e.target.value, state.lowestGrade); redraft(); };
+  $('#lo').onchange = (e) => { state.lowestGrade = Math.max(+e.target.value, state.highestGrade); redraft(); };
   // A hand edit changes the student's whole group (for example, everyone tied with them).
   $('#rows').onchange = (e) => {
     const student = state.students.find((s) => s.order == e.target.dataset.o);

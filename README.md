@@ -31,6 +31,20 @@ The engine is the first part of `grade-studio.js` (`GradeStudioEngine`). In plai
 
 The maximum is a ceiling, not a target. Grade Studio never pushes the average up to it beyond what the scores support.
 
+### Professor's requests
+
+A professor can ask Gemini for changes like "no A+'s" or "give 4102 a B+". Gemini reopens Grade Studio with a settings line in the page:
+
+```js
+const SET={"maxAverage":3.3,"highestGrade":"A","lowestGrade":"C","keepTiesTogether":true,"closeScoreGap":0,"setGrades":{"4102":"B+"}};
+```
+
+- **`highestGrade` / `lowestGrade`** limit the range the draft can use.
+- **`setGrades`** fixes specific students' grades. Their grade points come out of the class budget first, so the whole class still stays at or under the maximum.
+- Settings never change a score.
+- The app lists every request at the top. Anything it can't use (a misspelled grade, an exam ID not in the class) is listed, not guessed.
+- A requested grade that breaks score order is flagged as a score inversion.
+
 ### What gets flagged
 
 - **Tied score:** same total as another student.
@@ -79,6 +93,8 @@ node --test tests/*.test.js
 ```
 
 They check:
+
+- the grade range and requested grades
 
 - the built-in self-test
 - that the average never goes over the maximum (1,000 random classes)

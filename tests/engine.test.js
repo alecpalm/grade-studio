@@ -81,3 +81,24 @@ test('the data fingerprint matches the one the Gemini skill prints in Python', (
   // Python: data_line([('0417','88'), ('0102','92.5'), ('1203','75')]) prints DSUM='af16656e'
   assert.strictEqual(gs.fingerprint(JSON.stringify([['0417', 88], ['0102', 92.5], ['1203', 75]])), 'af16656e');
 });
+
+test('highest and lowest grade limits are respected', () => {
+  const rnd = random(4);
+  for (let i = 0; i < 500; i++) {
+    const students = randomClass(rnd);
+    gs.draftGrades(students, settings({ highestGrade: 1, lowestGrade: 7 })); // A to C
+    for (const s of students) assert.ok(s.grade >= 1 && s.grade <= 7);
+    assert.ok(gs.averagePoints(students) <= 3.3 + 1e-9);
+  }
+});
+
+test('grades set by request are kept, and the class stays under the maximum when possible', () => {
+  const rnd = random(5);
+  for (let i = 0; i < 500; i++) {
+    const students = randomClass(rnd);
+    const id = students[Math.floor(rnd() * students.length)].id;
+    gs.draftGrades(students, settings({ setGrades: { [id]: 3 } })); // B+
+    assert.strictEqual(students.find((s) => s.id === id).grade, 3);
+    assert.ok(gs.averagePoints(students) <= 3.3 + 1e-9);
+  }
+});
