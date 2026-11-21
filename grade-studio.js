@@ -419,9 +419,10 @@ if (typeof document !== 'undefined') (() => {
     <div class="card ctrls">
       <div>
         <b>Maximum grade average</b>
+        <p class="mf" style="margin:2px 0 0">3.30 for 1L, large and listed courses · 3.50 for others</p>
         <div class="row" style="margin-top:8px"><span class="tabs" id="pre"><button data-c="3.30">3.30</button><button data-c="3.50">3.50</button></span><input id="capn" type="number" step=".01" style="width:80px" aria-label="Maximum"></div>
         <input id="sl" type="range" min="2" max="4" step=".01" aria-label="Maximum slider">
-        <div class="row mf" style="justify-content:space-between;margin:0;flex-wrap:nowrap"><span>2.00</span><span style="text-align:center">3.30 for 1L, large and listed courses · 3.50 for others</span><span>4.00</span></div>
+        <div class="row mf" style="justify-content:space-between;margin:0;flex-wrap:nowrap"><span>2.00</span><span>4.00</span></div>
         <p id="note" class="note"></p>
       </div>
       <div><label class="row" style="justify-content:space-between"><b>Keep ties together</b><input id="ties" class="sw" type="checkbox"></label><p class="mf">Same total, same grade.</p></div>
