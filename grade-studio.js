@@ -586,9 +586,10 @@ if (typeof document !== 'undefined') (() => {
       const hot = flag && flag[1];
       const nth = (stackSeen[key(s)] = (stackSeen[key(s)] || 0) + 1);
       const offset = (nth - 1 - (stackSize[key(s)] - 1) / 2) * 13;
-      svg += `<circle cx="${x(s.total) + offset}" cy="${y(s.grade)}" r="${hot ? 6.5 : 5.5}" fill="${gradeColor(s.grade)}" stroke="${hot ? 'var(--fg)' : 'var(--card)'}" stroke-width="${hot ? 2.5 : 1.5}"><title>${escapeHtml(s.id)} · ${s.total} pts · ${GRADES[s.grade].letter}${flag ? ' · ' + flag[0] : ''}</title></circle>`;
+      svg += `<circle cx="${x(s.total) + offset}" cy="${y(s.grade)}" r="${hot ? 6.5 : 5.5}" fill="${gradeColor(s.grade)}" stroke="${hot ? 'var(--fg)' : 'var(--card)'}" stroke-width="${hot ? 2.5 : 1.5}" data-o="${s.order}" style="cursor:pointer" aria-label="${escapeHtml(s.id)}, ${s.total} points, ${GRADES[s.grade].letter}"></circle>`;
     });
-    $('#cw').innerHTML = `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Grade ladder">${svg}<text x="${left + 12}" y="${height - 8}">${low}</text><text x="${(left + width) / 2}" y="${height - 8}" text-anchor="middle">Total points</text><text x="${width - 12}" y="${height - 8}" text-anchor="end">${sorted[0].total}</text></svg>`;
+    $('#cw').style.position = 'relative';
+    $('#cw').innerHTML = `<div id="tip" role="tooltip" hidden style="position:absolute;z-index:2;pointer-events:none;min-width:170px;padding:10px 12px;border-radius:10px;border:1px solid var(--bd);background:var(--card);color:var(--fg);box-shadow:0 6px 20px #0002;font-size:13px;line-height:1.45"></div><svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Grade ladder">${svg}<text x="${left + 12}" y="${height - 8}">${low}</text><text x="${(left + width) / 2}" y="${height - 8}" text-anchor="middle">Total points</text><text x="${width - 12}" y="${height - 8}" text-anchor="end">${sorted[0].total}</text></svg>`;
   }
 
   // ---- Showing, hiding and errors ----
@@ -636,6 +637,34 @@ if (typeof document !== 'undefined') (() => {
     link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
+
+  // ---- Chart hover card ----
+  /** Shows a student's details next to their dot: exam ID, total, grade, rank and any flag. Works on hover and tap. */
+  function showTip(dot, clientX, clientY) {
+    const student = state.students.find((s) => s.order == dot.dataset.o);
+    if (!student) return;
+    const flag = findFlags(state.students).get(student.order) ||
+      (Object.prototype.hasOwnProperty.call(state.setGrades, student.id) ? ['Grade set by request', false] : null);
+    const rank = 1 + state.students.filter((s) => s.total > student.total).length;
+    const tied = state.students.filter((s) => s.total === student.total).length > 1;
+    const { letter, points: p } = GRADES[student.grade];
+    const tip = $('#tip');
+    tip.innerHTML = `<b style="font-size:14px">${escapeHtml(student.id)}</b><br>` +
+      `${student.total} points · rank ${rank}${tied ? ' (tied)' : ''} of ${state.students.length}<br>` +
+      `Grade <b>${letter}</b> (${p.toFixed(2)})` +
+      (flag ? `<br><span style="color:${flag[1] ? 'var(--wa)' : 'var(--mf)'}">${escapeHtml(flag[0])}</span>` : '');
+    tip.hidden = false;
+    const box = $('#cw').getBoundingClientRect();
+    const x = clientX - box.left, y = clientY - box.top;
+    const left = Math.min(Math.max(0, x + 14), box.width - tip.offsetWidth - 4);
+    const top = y - tip.offsetHeight - 12 >= 0 ? y - tip.offsetHeight - 12 : y + 16;
+    tip.style.left = left + 'px';
+    tip.style.top = top + 'px';
+  }
+  const hideTip = () => { const tip = $('#tip'); if (tip) tip.hidden = true; };
+  $('#cw').addEventListener('mousemove', (e) => { const dot = e.target.closest('circle[data-o]'); dot ? showTip(dot, e.clientX, e.clientY) : hideTip(); });
+  $('#cw').addEventListener('mouseleave', hideTip);
+  $('#cw').addEventListener('click', (e) => { const dot = e.target.closest('circle[data-o]'); dot ? showTip(dot, e.clientX, e.clientY) : hideTip(); });
 
   // ---- Controls ----
   $('#usePaste').onclick = () => {
