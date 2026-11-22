@@ -102,3 +102,9 @@ test('grades set by request are kept, and the class stays under the maximum when
     assert.ok(gs.averagePoints(students) <= 3.3 + 1e-9);
   }
 });
+
+test('typed pairs on one line, separated by commas or semicolons', () => {
+  assert.deepStrictEqual(gs.readScores(gs.readPaste('4001 88, 4002 76; 4003 93'), 'Typed').scores, [['4001', 88], ['4002', 76], ['4003', 93]]);
+  assert.deepStrictEqual(gs.readScores(gs.readPaste('S1: 44, S2: 47'), 'Typed').scores, [['S1', 44], ['S2', 47]]);
+  assert.deepStrictEqual(gs.readScores(gs.readPaste('Exam ID, Total\n2001, 91\n2002, 84'), 'Typed').scores, [['2001', 91], ['2002', 84]]);
+});

@@ -305,6 +305,11 @@ const GradeStudioInput = (() => {
    * Anything else is read as a spreadsheet paste.
    */
   function readPaste(text) {
+    // "4001 88, 4002 76; 4003 93" (pairs separated by commas or semicolons) → one pair per line.
+    const chunks = text.split(/[\r\n,;]+/).filter((s) => s.trim());
+    if (chunks.length > 1 && chunks.every((s) => /^\s*[^\s,;:]+\s*[:\s]\s*-?\d+(\.\d+)?\s*$/.test(s))) {
+      text = chunks.map((s) => s.trim().replace(/\s*:\s*/, ' ')).join('\n');
+    }
     const lines = text.split(/\r?\n/).filter((s) => s.trim());
     const bare = lines.every((s) => /^\s*[^\s,;]+[\s,;]+-?\d+(\.\d+)?\s*$/.test(s));
     if (bare) text = 'Exam ID\tTotal\n' + lines.map((s) => s.trim().split(/[\s,;]+/).join('\t')).join('\n');
@@ -620,7 +625,7 @@ if (typeof document !== 'undefined') (() => {
     showEditNote('');
     const sum = +scores.reduce((t, s) => t + s[1], 0).toFixed(2);
     const zeroNote = zeros ? ` ${zeros} total${zeros > 1 ? 's are' : ' is'} 0: check ${zeros > 1 ? 'they are real scores' : 'it is a real score'}.` : '';
-    $('#meta').textContent = `${sourceName}: ${scores.length} students, totals add up to ${sum}. Check these match your spreadsheet. You decide every grade.${zeroNote}`;
+    $('#meta').textContent = `${sourceName}: ${scores.length} students, totals add up to ${sum}. Check these match your scores. You decide every grade.${zeroNote}`;
     showView(true);
   }
 
@@ -707,6 +712,13 @@ if (typeof document !== 'undefined') (() => {
         return showProblems(["The scores didn't copy into Grade Studio exactly. Click Try again to paste them, or ask Gemini to reopen Grade Studio."]);
       }
       return loadClass([['Exam ID', 'Total'], ...data.map((r) => [String(r[0]), String(r[1])])], 'Your class');
+    }
+    // Scores the professor typed in the chat: Gemini copies their lines into TYPED as written, and
+    // they are read here exactly like a paste. The professor checks the count and total at the top.
+    const typed = typeof TYPED !== 'undefined' ? String(TYPED).trim() : '';
+    if (typed) {
+      $('#paste').value = typed;
+      return loadClass(readPaste(typed), 'Typed in chat');
     }
     showView(false);
   }
