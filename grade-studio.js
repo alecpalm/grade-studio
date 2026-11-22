@@ -267,7 +267,7 @@ const GradeStudioEngine = (() => {
  * ====================================================================== */
 
 const GradeStudioInput = (() => {
-  const ID_NAMES = ['final exam id', 'exam id', 'exam number', 'anonymous id', 'exam no', 'id'];
+  const ID_NAMES = ['final exam id', 'exam id', 'exam number', 'anonymous id', 'exam no', 'exam #', 'id'];
   const TOTAL_NAMES = ['total', 'total points', 'final total', 'points', 'score'];
 
   /** Splits pasted spreadsheet text into rows of cells. Handles tabs or commas and quoted cells. */
@@ -312,14 +312,39 @@ const GradeStudioInput = (() => {
     }
     const lines = text.split(/\r?\n/).filter((s) => s.trim());
     const bare = lines.every((s) => /^\s*[^\s,;]+[\s,;]+-?\d+(\.\d+)?\s*$/.test(s));
-    if (bare) text = 'Exam ID\tTotal\n' + lines.map((s) => s.trim().split(/[\s,;]+/).join('\t')).join('\n');
+    if (bare) return parseTable('Exam ID\tTotal\n' + lines.map((s) => s.trim().split(/[\s,;]+/).join('\t')).join('\n'));
+    if (!/[\t,]/.test(text) && lines.length > 1) {
+      const spaced = spacedColumns(lines);
+      if (spaced) return spaced;
+    }
     return parseTable(text);
+  }
+
+  /** Header names normalized for matching: lower case, single spaces, no trailing "." ":" or "#" clutter. */
+  const norm = (s) => s.toLowerCase().replace(/\s+/g, ' ').replace(/[.:]+$/, '').trim();
+
+  /**
+   * Columns separated by spaces instead of tabs (for example when tabs were lost in copying):
+   * "Exam No.  Q1  Total" / "91000  20  78.5". Multi-word header names stay together.
+   * Used only when every row has as many columns as the header; otherwise returns null.
+   */
+  function spacedColumns(lines) {
+    const multi = [...ID_NAMES, ...TOTAL_NAMES].filter((n) => n.includes(' ')).sort((a, b) => b.length - a.length);
+    let head = lines[0].trim().replace(/\s+/g, ' ');
+    const kept = [];
+    for (const name of multi) {
+      head = head.replace(new RegExp(name.replace(/[.*+?^${}()|[\]\\#]/g, '\\$&') + '\\.?(?=\\s|$)', 'ig'), (m) => { kept.push(m); return `\u0001${kept.length - 1}\u0001`; });
+    }
+    const header = head.split(' ').map((h) => h.replace(/\u0001(\d+)\u0001/g, (_, i) => kept[+i]));
+    const rows = lines.slice(1).map((s) => s.trim().split(/\s+/));
+    if (header.length < 2 || !rows.every((r) => r.length === header.length)) return null;
+    return [header, ...rows];
   }
 
   /** The header row: the first of 20 rows naming both an ID and a total column, else the first row with two cells. */
   function findHeader(rows) {
     for (let i = 0; i < Math.min(20, rows.length); i++) {
-      const lower = rows[i].map((x) => x.toLowerCase());
+      const lower = rows[i].map(norm);
       if (lower.some((x) => ID_NAMES.includes(x)) && lower.some((x) => TOTAL_NAMES.includes(x))) return i;
     }
     return rows.findIndex((r) => r.filter(Boolean).length >= 2);
@@ -328,7 +353,7 @@ const GradeStudioInput = (() => {
   /** Index of the first column whose header matches one of the names, in order of preference. */
   function findColumn(header, names) {
     for (const name of names) {
-      const i = header.findIndex((x) => x.toLowerCase() === name);
+      const i = header.findIndex((x) => norm(x) === name);
       if (i >= 0) return i;
     }
     return -1;

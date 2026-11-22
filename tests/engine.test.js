@@ -108,3 +108,9 @@ test('typed pairs on one line, separated by commas or semicolons', () => {
   assert.deepStrictEqual(gs.readScores(gs.readPaste('S1: 44, S2: 47'), 'Typed').scores, [['S1', 44], ['S2', 47]]);
   assert.deepStrictEqual(gs.readScores(gs.readPaste('Exam ID, Total\n2001, 91\n2002, 84'), 'Typed').scores, [['2001', 91], ['2002', 84]]);
 });
+
+test('headers with punctuation and columns separated by spaces', () => {
+  assert.deepStrictEqual(gs.readScores(gs.readPaste('Exam No.\tTotal\n91000\t78.5\n91001\t79'), 'P').scores, [['91000', 78.5], ['91001', 79]]);
+  assert.deepStrictEqual(gs.readScores(gs.readPaste('Exam No. Total\n91000 78.5\n91001 79'), 'P').scores, [['91000', 78.5], ['91001', 79]]);
+  assert.deepStrictEqual(gs.readScores(gs.readPaste('Exam ID   Q1   Q2   Total\n2200   19   22   71.5\n2201   30   26   79.5'), 'P').scores, [['2200', 71.5], ['2201', 79.5]]);
+});
