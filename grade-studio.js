@@ -214,8 +214,8 @@ const GradeStudioEngine = (() => {
    *   - Tied score: same total as another student (shown softly).
    *   - Split tie: same total but different grades (needs review).
    *   - Score inversion: a higher total has a lower grade than the next student.
-   *   - Close boundary: the next student down is in a different grade but within
-   *     2.5% of the score range (at least 0.5 points).
+   *   - Near cutoff: the next student down is in a different grade but within
+   *     2.5% of the score range (at least 0.5 points). The label names the grade just above.
    */
   function findFlags(students) {
     const sorted = byScore(students);
@@ -241,7 +241,7 @@ const GradeStudioEngine = (() => {
         flags.set(higher.order, ['Score inversion', true]);
         flags.set(lower.order, ['Score inversion', true]);
       } else if (higher.grade !== lower.grade && higher.total - lower.total <= closeEnough) {
-        flags.set(lower.order, [`Close boundary: ${+(higher.total - lower.total).toFixed(2)} pts`, true]);
+        flags.set(lower.order, [`Near cutoff: ${+(higher.total - lower.total).toFixed(2)} pts below ${GRADES[higher.grade].letter}`, true]);
       }
     }
     return flags;
@@ -459,7 +459,8 @@ if (typeof document !== 'undefined') (() => {
       <div><b>Keep close scores together</b><div class="row" style="margin-top:8px"><input id="gap" type="number" min="0" max="20" step=".5" style="width:70px" aria-label="Points"><span class="mf" style="margin:0">points (0 is off)</span></div></div>
       <div><b>Grade range</b><div class="row" style="margin-top:8px"><select id="hi" aria-label="Highest grade"></select><span class="mf" style="margin:0">to</span><select id="lo" aria-label="Lowest grade"></select></div></div>
     </div>
-    <p id="asked" class="note"></p>
+    <p id="asked" class="mf"></p>
+    <p id="askwarn" class="note"></p>
 
     <div class="stats">
       <div class="card stat" style="--s:var(--gB)"><div class="k">Students</div><div id="n" class="v"></div><p id="rng" class="mf"></p></div>
@@ -475,7 +476,7 @@ if (typeof document !== 'undefined') (() => {
       <table><thead><tr><th>Exam ID</th><th class="num">Total</th><th>Grade</th></tr></thead><tbody id="rows"></tbody></table>
     </div>
 
-    <p class="mf">Draft only. The maximum is a ceiling, not a quota.</p>
+    <p class="mf">Boley Law Library @ Lewis &amp; Clark Law School</p>
   </section>
 </main>`);
 
@@ -494,11 +495,11 @@ if (typeof document !== 'undefined') (() => {
     const ignored = [];
     const asked = [];
     for (const [key, value] of Object.entries(raw)) {
-      if (key === 'maxAverage' && Number.isFinite(+value) && +value >= 0 && +value <= 4.33) { out.maxAverage = +value; asked.push(`maximum average ${(+value).toFixed(2)}`); }
-      else if (key === 'keepTiesTogether' && typeof value === 'boolean') { out.keepTiesTogether = value; asked.push(value ? 'ties kept together' : 'ties not kept together'); }
+      if (key === 'maxAverage' && Number.isFinite(+value) && +value >= 0 && +value <= 4.33) { out.maxAverage = +value; if (Math.abs(+value - DEFAULT_SETTINGS.maxAverage) > 1e-9) asked.push(`maximum average ${(+value).toFixed(2)}`); }
+      else if (key === 'keepTiesTogether' && typeof value === 'boolean') { out.keepTiesTogether = value; if (!value) asked.push('ties not kept together'); }
       else if (key === 'closeScoreGap' && Number.isFinite(+value) && +value >= 0 && +value <= 20) { out.closeScoreGap = +value; if (+value) asked.push(`scores within ${+value} points kept together`); }
-      else if (key === 'highestGrade' && gradeIndex(value) >= 0) { out.highestGrade = gradeIndex(value); asked.push(`no grade above ${GRADES[out.highestGrade].letter}`); }
-      else if (key === 'lowestGrade' && gradeIndex(value) >= 0) { out.lowestGrade = gradeIndex(value); asked.push(`no grade below ${GRADES[out.lowestGrade].letter}`); }
+      else if (key === 'highestGrade' && gradeIndex(value) >= 0) { out.highestGrade = gradeIndex(value); if (out.highestGrade > 0) asked.push(`no grade above ${GRADES[out.highestGrade].letter}`); }
+      else if (key === 'lowestGrade' && gradeIndex(value) >= 0) { out.lowestGrade = gradeIndex(value); if (out.lowestGrade < GRADES.length - 1) asked.push(`no grade below ${GRADES[out.lowestGrade].letter}`); }
       else if (key === 'setGrades' && value && typeof value === 'object') {
         out.setGrades = {};
         for (const [id, letter] of Object.entries(value)) {
@@ -568,11 +569,12 @@ if (typeof document !== 'undefined') (() => {
     const gradeOptions = (selected) => GRADES.map(({ letter }, i) => `<option value="${i}"${i == selected ? ' selected' : ''}>${letter}</option>`).join('');
     $('#hi').innerHTML = gradeOptions(state.highestGrade);
     $('#lo').innerHTML = gradeOptions(state.lowestGrade);
-    const askedText = PAGE.asked.length ? 'Requested in Gemini: ' + PAGE.asked.join('; ') + '.' : '';
-    const ignoredText = PAGE.ignored.length ? ' Not used (not understood): ' + PAGE.ignored.join('; ') + '.' : '';
+    const askedText = PAGE.asked.length ? 'Asked for in Gemini: ' + PAGE.asked.join('; ') + '.' : '';
+    const ignoredText = PAGE.ignored.length ? 'Not used (not understood): ' + PAGE.ignored.join('; ') + '.' : '';
     const missing = Object.keys(state.setGrades).filter((id) => !state.students.some((s) => s.id === id));
     const missingText = missing.length ? ` No student with exam ID ${missing.join(', ')}.` : '';
-    $('#asked').textContent = (askedText + ignoredText + missingText).trim();
+    $('#asked').textContent = askedText;
+    $('#askwarn').textContent = (ignoredText + missingText).trim();
 
     drawChart(flags);
     $('#counts').innerHTML = GRADES.map(({ letter }, i) =>
@@ -649,8 +651,9 @@ if (typeof document !== 'undefined') (() => {
     state.students = scores.map(([id, total], order) => ({ id, total, grade: 4, order }));
     showEditNote('');
     const sum = +scores.reduce((t, s) => t + s[1], 0).toFixed(2);
-    const zeroNote = zeros ? ` ${zeros} total${zeros > 1 ? 's are' : ' is'} 0: check ${zeros > 1 ? 'they are real scores' : 'it is a real score'}.` : '';
-    $('#meta').textContent = `${sourceName}: ${scores.length} students, totals add up to ${sum}. Check these match your scores. You decide every grade.${zeroNote}`;
+    const zeroNote = zeros ? `\n${zeros} total${zeros > 1 ? 's are' : ' is'} 0: check ${zeros > 1 ? 'they are real scores' : 'it is a real score'}.` : '';
+    $('#meta').style.whiteSpace = 'pre-line';
+    $('#meta').textContent = `Students: ${scores.length}\nTotal Points: ${sum}\nMake sure to verify these results.${zeroNote}`;
     showView(true);
   }
 

@@ -42,7 +42,7 @@ const SET={"maxAverage":3.3,"highestGrade":"A","lowestGrade":"C","keepTiesTogeth
 - **`highestGrade` / `lowestGrade`** limit the range the draft can use.
 - **`setGrades`** fixes specific students' grades. Their grade points come out of the class budget first, so the whole class still stays at or under the maximum.
 - Settings never change a score.
-- The app lists every request at the top. Anything it can't use (a misspelled grade, an exam ID not in the class) is listed, not guessed.
+- The app lists every request that changes the defaults at the top. Anything it can't use (a misspelled grade, an exam ID not in the class) is listed, not guessed.
 - A requested grade that breaks score order is flagged as a score inversion.
 
 ### What gets flagged
@@ -50,7 +50,7 @@ const SET={"maxAverage":3.3,"highestGrade":"A","lowestGrade":"C","keepTiesTogeth
 - **Tied score:** same total as another student.
 - **Split tie:** same total but different grades, for example after a hand edit with ties not kept together.
 - **Score inversion:** a higher total with a lower grade than the next student.
-- **Close boundary:** the next student down is in a different grade but within 2.5% of the score range (at least 0.5 points).
+- **Near cutoff:** the next student down is in a different grade but within 2.5% of the score range (at least 0.5 points). The label says how far below the grade above, for example "Near cutoff: 0.5 pts below B+".
 
 ### What gets refused
 
