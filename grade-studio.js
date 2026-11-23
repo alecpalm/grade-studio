@@ -433,7 +433,7 @@ if (typeof document !== 'undefined') (() => {
 <main>
   <div class="ph">
     <div><h1>Grade Studio</h1><p id="meta" class="mf">Draft letter grades under the Lewis &amp; Clark maximum grade average.</p></div>
-    <div id="top" class="row hide"><button id="newf" class="btn">New scores</button><button id="export" class="btn pri">Export CSV</button></div>
+    <div id="top" class="row hide"><button id="reset" class="btn" title="Back to the default settings and a fresh draft">Reset</button><button id="export" class="btn pri">Export CSV</button></div>
   </div>
 
   <div id="errs" class="card note hide"><b>Grade Studio can't draft these grades yet</b><ul id="msg"></ul><button id="again" class="btn">Try again</button></div>
@@ -764,7 +764,17 @@ if (typeof document !== 'undefined') (() => {
     const text = $('#paste').value.trim();
     if (text) loadClass(readPaste(text), 'Pasted scores');
   };
-  $('#newf').onclick = $('#again').onclick = () => { $('#meta').textContent = START_TEXT; showView(false); };
+  const newScores = () => { $('#meta').textContent = START_TEXT; showView(false); };
+  $('#again').onclick = newScores;
+  // Reset: back to the default settings (3.30, ties together, full grade range, no fixed grades) and a fresh draft.
+  // The scores stay loaded. Requests made in Gemini are dropped too; ask Gemini again to bring them back.
+  $('#reset').onclick = () => {
+    Object.assign(state, DEFAULT_SETTINGS, { setGrades: {}, handEdited: false });
+    PAGE.asked = [];
+    PAGE.ignored = [];
+    redraft();
+    showEditNote('Reset to the default settings.');
+  };
   $('#pre').onclick = (e) => { if (e.target.dataset.c) setMaxAverage(e.target.dataset.c); };
   $('#sl').oninput = (e) => {
     state.maxAverage = +e.target.value;
@@ -810,6 +820,6 @@ if (typeof document !== 'undefined') (() => {
     showView(false);
   }
 
-  window.GradeStudio = { state, engine: GradeStudioEngine, input: GradeStudioInput };
+  window.GradeStudio = { state, engine: GradeStudioEngine, input: GradeStudioInput, newScores };
   start();
 })();

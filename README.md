@@ -10,7 +10,7 @@ All of the grading logic is in one file, [`grade-studio.js`](grade-studio.js), s
 
 1. In Gemini, attach the score spreadsheet (or say "Open Grade Studio" and paste the Exam ID and Total columns).
 2. Gemini opens Grade Studio in a Canvas window with the class loaded.
-3. The professor checks the student count and total at the top, sets the maximum (3.30 or 3.50), adjusts any grade, and exports a CSV.
+3. The professor checks the student count and total at the top, sets the maximum (3.30 or 3.50), adjusts any grade, and exports a CSV. **Reset** goes back to the default settings and a fresh draft.
 
 ## How the draft is made
 
