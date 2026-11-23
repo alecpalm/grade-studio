@@ -468,7 +468,7 @@ if (typeof document !== 'undefined') (() => {
       <div id="fc" class="card stat"><div class="k">Needs review</div><div id="nf" class="v"></div><p id="nft" class="mf"></p></div>
     </div>
 
-    <div class="card"><div class="ph"><div><p class="ct">Distribution</p><p class="mf">Each dot is a student; ringed dots need review.</p></div></div><div id="cw"></div><div id="counts" class="counts"></div></div>
+    <div class="card"><div class="ph"><div><p class="ct">Distribution</p><p id="cap" class="mf"></p></div><div id="ctype" class="tabs" role="group" aria-label="Chart type"><button data-t="dots">Dots</button><button data-t="bars">Bars</button></div></div><div id="cw"></div><div id="counts" class="counts"></div></div>
 
     <div class="card">
       <div class="ph"><div><p class="ct">Roster</p><p class="mf">Highest score first. Ties change together.</p></div></div>
@@ -487,15 +487,24 @@ if (typeof document !== 'undefined') (() => {
    *                 "highestGrade": "A", "lowestGrade": "C", "setGrades": { "4102": "B+" } };
    * Every key is optional. Anything that can't be used is listed on screen, never guessed.
    * These settings never change a score, only how grades are drafted.
+   *
+   * Professors often say "curve" or "target" for the maximum average, so those words (and a few
+   * like them) are read as maxAverage. "chart": "bars" shows a bar chart instead of dots.
    */
+  const MAX_AVERAGE_WORDS = ['maxaverage', 'maximumaverage', 'max', 'maximum', 'curve', 'target', 'targetaverage', 'average', 'cap', 'maxavg'];
   const gradeIndex = (letter) => GRADES.findIndex((g) => g.letter === String(letter).trim().toUpperCase().replace('-', '−'));
   function readPageSettings() {
     const raw = typeof SET !== 'undefined' && SET && typeof SET === 'object' ? SET : {};
     const out = {};
     const ignored = [];
     const asked = [];
-    for (const [key, value] of Object.entries(raw)) {
-      if (key === 'maxAverage' && Number.isFinite(+value) && +value >= 0 && +value <= 4.33) { out.maxAverage = +value; if (Math.abs(+value - DEFAULT_SETTINGS.maxAverage) > 1e-9) asked.push(`maximum average ${(+value).toFixed(2)}`); }
+    let chart = null;
+    for (const [rawKey, value] of Object.entries(raw)) {
+      const key = MAX_AVERAGE_WORDS.includes(rawKey.toLowerCase().replace(/[^a-z]/g, '')) ? 'maxAverage' : rawKey;
+      if (key === 'maxAverage' && 'maxAverage' in out && +value === out.maxAverage) continue; // same number said twice
+      if (key === 'chart' && /^(bar|bars|bar chart|histogram)$/i.test(String(value).trim())) { chart = 'bars'; asked.push('bar chart'); }
+      else if (key === 'chart' && /^(dot|dots|ladder)$/i.test(String(value).trim())) chart = 'dots';
+      else if (key === 'maxAverage' && Number.isFinite(+value) && +value >= 0 && +value <= 4.33) { out.maxAverage = +value; if (Math.abs(+value - DEFAULT_SETTINGS.maxAverage) > 1e-9) asked.push(`maximum average ${(+value).toFixed(2)}`); }
       else if (key === 'keepTiesTogether' && typeof value === 'boolean') { out.keepTiesTogether = value; if (!value) asked.push('ties not kept together'); }
       else if (key === 'closeScoreGap' && Number.isFinite(+value) && +value >= 0 && +value <= 20) { out.closeScoreGap = +value; if (+value) asked.push(`scores within ${+value} points kept together`); }
       else if (key === 'highestGrade' && gradeIndex(value) >= 0) { out.highestGrade = gradeIndex(value); if (out.highestGrade > 0) asked.push(`no grade above ${GRADES[out.highestGrade].letter}`); }
@@ -509,7 +518,7 @@ if (typeof document !== 'undefined') (() => {
       } else ignored.push(`${key}: ${JSON.stringify(value)}`);
     }
     if (out.highestGrade > (out.lowestGrade ?? GRADES.length - 1)) { ignored.push('the grade range is upside down'); delete out.highestGrade; delete out.lowestGrade; }
-    return { settings: out, asked, ignored };
+    return { settings: out, asked, ignored, chart };
   }
   const PAGE = readPageSettings();
 
@@ -522,6 +531,7 @@ if (typeof document !== 'undefined') (() => {
   });
   const START_TEXT = $('#meta').textContent;
   let sliderTimer = null;
+  let chartType = PAGE.chart || 'dots'; // 'dots' (one dot per student) or 'bars' (students per grade)
 
   const showEditNote = (text) => { $('#edits').textContent = text; };
 
@@ -576,7 +586,10 @@ if (typeof document !== 'undefined') (() => {
     $('#asked').textContent = askedText;
     $('#askwarn').textContent = (ignoredText + missingText).trim();
 
-    drawChart(flags);
+    document.querySelectorAll('#ctype button').forEach((b) => b.classList.toggle('on', b.dataset.t === chartType));
+    $('#cap').textContent = chartType === 'bars' ? 'Students per grade; hover a bar for details.' : 'Each dot is a student; ringed dots need review.';
+    $('#counts').classList.toggle('hide', chartType === 'bars');
+    chartType === 'bars' ? drawBars() : drawChart(flags);
     $('#counts').innerHTML = GRADES.map(({ letter }, i) =>
       `<div class="${counts[i] ? '' : 'z'}"><i style="background:${gradeColor(i)}"></i><b>${counts[i]}</b>${letter}</div>`).join('');
 
@@ -623,6 +636,28 @@ if (typeof document !== 'undefined') (() => {
     });
     $('#cw').style.position = 'relative';
     $('#cw').innerHTML = `<div id="tip" role="tooltip" hidden style="position:absolute;z-index:2;pointer-events:none;min-width:170px;padding:10px 12px;border-radius:10px;border:1px solid var(--bd);background:var(--card);color:var(--fg);box-shadow:0 6px 20px #0002;font-size:13px;line-height:1.45"></div><svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Grade ladder">${svg}<text x="${left + 12}" y="${height - 8}">${low}</text><text x="${(left + width) / 2}" y="${height - 8}" text-anchor="middle">Total points</text><text x="${width - 12}" y="${height - 8}" text-anchor="end">${sorted[0].total}</text></svg>`;
+  }
+
+  /** The bar chart: one bar per grade, as tall as the number of students with that grade. */
+  function drawBars() {
+    const counts = GRADES.map((_, i) => state.students.filter((s) => s.grade === i).length);
+    const used = counts.map((n, i) => (n ? i : -1)).filter((i) => i >= 0);
+    const best = Math.min(...used), worst = Math.max(...used);
+    const width = Math.max(420, $('#cw').clientWidth || 700);
+    const height = 240, top = 22, bottom = 30;
+    const most = Math.max(...counts);
+    const slot = width / (worst - best + 1);
+    let svg = '';
+    for (let g = best; g <= worst; g++) {
+      const h = counts[g] ? Math.max(3, ((height - top - bottom) * counts[g]) / most) : 0;
+      const x = (g - best) * slot + slot * 0.15;
+      const y = height - bottom - h;
+      svg += `<rect x="${x}" y="${y}" width="${slot * 0.7}" height="${h}" rx="4" fill="${gradeColor(g)}" data-g="${g}" style="cursor:pointer" aria-label="${GRADES[g].letter}: ${counts[g]} students"></rect>` +
+        `<text x="${x + slot * 0.35}" y="${y - 6}" text-anchor="middle" style="fill:var(--fg);font-weight:600">${counts[g]}</text>` +
+        `<text x="${x + slot * 0.35}" y="${height - 10}" text-anchor="middle">${GRADES[g].letter}</text>`;
+    }
+    $('#cw').style.position = 'relative';
+    $('#cw').innerHTML = `<div id="tip" role="tooltip" hidden style="position:absolute;z-index:2;pointer-events:none;min-width:170px;padding:10px 12px;border-radius:10px;border:1px solid var(--bd);background:var(--card);color:var(--fg);box-shadow:0 6px 20px #0002;font-size:13px;line-height:1.45"></div><svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Students per grade">${svg}</svg>`;
   }
 
   // ---- Showing, hiding and errors ----
@@ -695,10 +730,34 @@ if (typeof document !== 'undefined') (() => {
     tip.style.left = left + 'px';
     tip.style.top = top + 'px';
   }
+  /** Shows a grade's details next to its bar: how many students, their score range and how many need review. */
+  function showBarTip(bar, clientX, clientY) {
+    const g = +bar.dataset.g;
+    const group = state.students.filter((s) => s.grade === g);
+    if (!group.length) return;
+    const flags = findFlags(state.students);
+    const totals = group.map((s) => s.total);
+    const review = group.filter((s) => (flags.get(s.order) || [])[1]).length;
+    const tip = $('#tip');
+    tip.innerHTML = `<b style="font-size:14px">${GRADES[g].letter}</b> (${GRADES[g].points.toFixed(2)})<br>` +
+      `${group.length} student${group.length > 1 ? 's' : ''} · ${Math.round((100 * group.length) / state.students.length)}% of the class<br>` +
+      `Scores ${Math.min(...totals)} to ${Math.max(...totals)}` +
+      (review ? `<br><span style="color:var(--wa)">${review} need${review > 1 ? '' : 's'} review</span>` : '');
+    tip.hidden = false;
+    const box = $('#cw').getBoundingClientRect();
+    const x = clientX - box.left, y = clientY - box.top;
+    tip.style.left = Math.min(Math.max(0, x + 14), box.width - tip.offsetWidth - 4) + 'px';
+    tip.style.top = (y - tip.offsetHeight - 12 >= 0 ? y - tip.offsetHeight - 12 : y + 16) + 'px';
+  }
   const hideTip = () => { const tip = $('#tip'); if (tip) tip.hidden = true; };
-  $('#cw').addEventListener('mousemove', (e) => { const dot = e.target.closest('circle[data-o]'); dot ? showTip(dot, e.clientX, e.clientY) : hideTip(); });
+  const pointAt = (e) => {
+    const dot = e.target.closest('circle[data-o]'), bar = e.target.closest('rect[data-g]');
+    dot ? showTip(dot, e.clientX, e.clientY) : bar ? showBarTip(bar, e.clientX, e.clientY) : hideTip();
+  };
+  $('#cw').addEventListener('mousemove', pointAt);
   $('#cw').addEventListener('mouseleave', hideTip);
-  $('#cw').addEventListener('click', (e) => { const dot = e.target.closest('circle[data-o]'); dot ? showTip(dot, e.clientX, e.clientY) : hideTip(); });
+  $('#cw').addEventListener('click', pointAt);
+  $('#ctype').onclick = (e) => { if (e.target.dataset.t) { chartType = e.target.dataset.t; render(); } };
 
   // ---- Controls ----
   $('#usePaste').onclick = () => {
