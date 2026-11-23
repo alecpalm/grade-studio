@@ -432,7 +432,7 @@ if (typeof document !== 'undefined') (() => {
 </header>
 <main>
   <div class="ph">
-    <div><h1>Grade Studio</h1><p id="meta" class="mf">Draft letter grades under the Lewis &amp; Clark maximum grade average.</p></div>
+    <div><h1 id="title">Grade Studio</h1><p id="meta" class="mf">Draft letter grades under the Lewis &amp; Clark maximum grade average.</p></div>
     <div id="top" class="row hide"><button id="reset" class="btn" title="Back to the default settings and a fresh draft">Reset</button><button id="export" class="btn pri">Export CSV</button></div>
   </div>
 
@@ -490,6 +490,7 @@ if (typeof document !== 'undefined') (() => {
    *
    * Professors often say "curve" or "target" for the maximum average, so those words (and a few
    * like them) are read as maxAverage. "chart": "bars" shows a bar chart instead of dots.
+   * "course": "Contracts I" only adds the course name to the title.
    */
   const MAX_AVERAGE_WORDS = ['maxaverage', 'maximumaverage', 'max', 'maximum', 'curve', 'target', 'targetaverage', 'average', 'cap', 'maxavg'];
   const gradeIndex = (letter) => GRADES.findIndex((g) => g.letter === String(letter).trim().toUpperCase().replace('-', '−'));
@@ -499,9 +500,11 @@ if (typeof document !== 'undefined') (() => {
     const ignored = [];
     const asked = [];
     let chart = null;
+    let course = '';
     for (const [rawKey, value] of Object.entries(raw)) {
       const key = MAX_AVERAGE_WORDS.includes(rawKey.toLowerCase().replace(/[^a-z]/g, '')) ? 'maxAverage' : rawKey;
       if (key === 'maxAverage' && 'maxAverage' in out && +value === out.maxAverage) continue; // same number said twice
+      if (key === 'course' && typeof value === 'string' && value.trim().length <= 80) { course = value.trim(); continue; } // shown in the title only
       if (key === 'chart' && /^(bar|bars|bar chart|histogram)$/i.test(String(value).trim())) { chart = 'bars'; asked.push('bar chart'); }
       else if (key === 'chart' && /^(dot|dots|ladder)$/i.test(String(value).trim())) chart = 'dots';
       else if (key === 'maxAverage' && Number.isFinite(+value) && +value >= 0 && +value <= 4.33) { out.maxAverage = +value; if (Math.abs(+value - DEFAULT_SETTINGS.maxAverage) > 1e-9) asked.push(`maximum average ${(+value).toFixed(2)}`); }
@@ -518,7 +521,7 @@ if (typeof document !== 'undefined') (() => {
       } else ignored.push(`${key}: ${JSON.stringify(value)}`);
     }
     if (out.highestGrade > (out.lowestGrade ?? GRADES.length - 1)) { ignored.push('the grade range is upside down'); delete out.highestGrade; delete out.lowestGrade; }
-    return { settings: out, asked, ignored, chart };
+    return { settings: out, asked, ignored, chart, course };
   }
   const PAGE = readPageSettings();
 
@@ -531,6 +534,7 @@ if (typeof document !== 'undefined') (() => {
   });
   const START_TEXT = $('#meta').textContent;
   let sliderTimer = null;
+  if (PAGE.course) $('#title').textContent = 'Grade Studio · ' + PAGE.course;
   let chartType = PAGE.chart || 'dots'; // 'dots' (one dot per student) or 'bars' (students per grade)
 
   const showEditNote = (text) => { $('#edits').textContent = text; };

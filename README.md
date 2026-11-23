@@ -42,6 +42,7 @@ const SET={"maxAverage":3.3,"highestGrade":"A","lowestGrade":"C","keepTiesTogeth
 - **`highestGrade` / `lowestGrade`** limit the range the draft can use.
 - **`maxAverage`** sets the maximum. The app also reads "curve" or "target" as the maximum, since professors often say that.
 - **`chart`**: `"bars"` shows students per grade as bars instead of one dot per student. The professor can also switch with the Dots / Bars toggle.
+- **`course`** only adds the course name to the title.
 - **`setGrades`** fixes specific students' grades. Their grade points come out of the class budget first, so the whole class still stays at or under the maximum.
 - Settings never change a score.
 - The app lists every request that changes the defaults at the top. Anything it can't use (a misspelled grade, an exam ID not in the class) is listed, not guessed.
