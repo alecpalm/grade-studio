@@ -72,9 +72,9 @@ test('pasted text: spreadsheet columns, typed lines, and refusals', () => {
   assert.deepStrictEqual(pasted.scores, [['0417', 88], ['0102', 92.5]]);
   const typed = gs.readScores(gs.readPaste('A-101 88\nA-102 92'), 'Pasted');
   assert.deepStrictEqual(typed.scores, [['A-101', 88], ['A-102', 92]]);
-  assert.ok(gs.readScores(gs.readPaste('jtest@example.edu 88\nrs@example.edu 92'), 'Pasted').problems[0].includes('names or emails'));
-  assert.ok(gs.readScores(gs.readPaste('Exam ID,Total\n1,80\n1,70'), 'Pasted').problems[0].includes('appears twice'));
-  assert.ok(gs.readScores(gs.readPaste('Exam ID,Total\n1,80\n2,INC'), 'Pasted').problems[0].includes('not a number'));
+  assert.ok(gs.readScores(gs.readPaste('jtest@example.edu 88\nrs@example.edu 92'), 'Pasted').problems[0].includes('student names'));
+  assert.ok(gs.readScores(gs.readPaste('Exam ID,Total\n1,80\n1,70'), 'Pasted').problems[0].includes('listed twice'));
+  assert.ok(gs.readScores(gs.readPaste('Exam ID,Total\n1,80\n2,INC'), 'Pasted').problems[0].includes('need to be numbers'));
 });
 
 test('the data fingerprint matches the one the Gemini skill prints in Python', () => {

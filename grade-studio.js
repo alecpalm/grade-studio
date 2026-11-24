@@ -248,6 +248,10 @@ const GradeStudioEngine = (() => {
   }
 
   /**
+   * Error codes shown to professors, for support: GS-101 Gemini couldn't make the app, GS-102 a spreadsheet
+   * couldn't be read, GS-201 the grading code couldn't load, GS-202 the scores failed their fingerprint check,
+   * GS-203 the engine failed its self-test.
+   *
    * Runs the engine on a fixed class and checks the result. If this ever
    * fails, the page refuses to draft grades.
    */
@@ -370,7 +374,7 @@ const GradeStudioInput = (() => {
     const idCol = findColumn(header, ID_NAMES);
     const totalCol = findColumn(header, TOTAL_NAMES);
     if (h < 0 || idCol < 0 || totalCol < 0) {
-      return { problems: [`${sourceName}: Grade Studio needs a column named “Exam ID” (anonymous exam numbers, not names) and one named “Total”.`] };
+      return { problems: ['Grade Studio needs two columns: Exam ID (anonymous exam numbers) and Total.'] };
     }
 
     const problems = [];
@@ -381,17 +385,17 @@ const GradeStudioInput = (() => {
       const id = (r[idCol] || '').trim();
       const total = (r[totalCol] || '').trim();
       if (!id && !total) return;
-      if (!id) return problems.push(`Row ${line}: missing exam ID.`);
-      if (total === '') return problems.push(`Row ${line} (${id}): no total.`);
-      if (!Number.isFinite(+total)) return problems.push(`Row ${line} (${id}): total "${total}" is not a number.`);
-      if (seen.has(id)) return problems.push(`Row ${line}: exam ID ${id} appears twice (also row ${seen.get(id)}).`);
+      if (!id) return problems.push(`Row ${line} has no exam number.`);
+      if (total === '') return problems.push(`Exam ${id} (row ${line}) has no total.`);
+      if (!Number.isFinite(+total)) return problems.push(`Exam ${id} (row ${line}) has "${total}" as its total. Totals need to be numbers.`);
+      if (seen.has(id)) return problems.push(`Exam ${id} is listed twice (rows ${seen.get(id)} and ${line}).`);
       seen.set(id, line);
       scores.push([id, +total]);
     });
 
-    if (scores.some(([id]) => /@|^[a-z]+[ ,]+[a-z]+$/i.test(id))) problems.unshift('The ID column looks like names or emails. Use anonymous exam numbers only.');
-    if (!scores.length && !problems.length) problems.push('No student rows were found under the header.');
-    if (scores.length > 1 && new Set(scores.map((s) => s[1])).size < 2) problems.push(`Every total is ${scores[0][1]}. Check you copied the Total column.`);
+    if (scores.some(([id]) => /@|^[a-z]+[ ,]+[a-z]+$/i.test(id))) problems.unshift('Grade Studio only works with anonymous exam numbers, not student names. Please use a version with exam numbers instead.');
+    if (!scores.length && !problems.length) problems.push('No students were found under the Exam ID and Total headings.');
+    if (scores.length > 1 && new Set(scores.map((s) => s[1])).size < 2) problems.push(`Every total is ${scores[0][1]}. Please check you copied the Total column.`);
     return problems.length ? { problems } : { scores };
   }
 
@@ -806,11 +810,11 @@ if (typeof document !== 'undefined') (() => {
   // ---- Start ----
   // DATA and DSUM come from the page Gemini made: the class, and its fingerprint from the skill's Python.
   function start() {
-    if (!selfTest()) return showProblems(['Grade Studio failed its self-check. Ask Gemini to reopen it.'], true);
+    if (!selfTest()) return showProblems(['Something went wrong opening Grade Studio. Please ask Gemini to open it again. (Error GS-203)'], true);
     const data = typeof DATA !== 'undefined' ? DATA : [];
     if (data.length) {
       if (fingerprint(JSON.stringify(data)) !== DSUM) {
-        return showProblems(["The scores didn't copy into Grade Studio exactly. Click Try again to paste them, or ask Gemini to reopen Grade Studio."]);
+        return showProblems(["Some scores didn't come through correctly, so nothing is shown. Please ask Gemini to open Grade Studio again, or paste your scores here. (Error GS-202)"]);
       }
       return loadClass([['Exam ID', 'Total'], ...data.map((r) => [String(r[0]), String(r[1])])], 'Your class');
     }
