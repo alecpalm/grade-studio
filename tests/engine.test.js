@@ -114,3 +114,26 @@ test('headers with punctuation and columns separated by spaces', () => {
   assert.deepStrictEqual(gs.readScores(gs.readPaste('Exam No. Total\n91000 78.5\n91001 79'), 'P').scores, [['91000', 78.5], ['91001', 79]]);
   assert.deepStrictEqual(gs.readScores(gs.readPaste('Exam ID   Q1   Q2   Total\n2200   19   22   71.5\n2201   30   26   79.5'), 'P').scores, [['2200', 71.5], ['2201', 79.5]]);
 });
+
+test('grade limits: never more students in a grade than its limit, average still at or under the maximum', () => {
+  const rnd = random(7);
+  for (let i = 0; i < 1000; i++) {
+    const students = randomClass(rnd);
+    const cap = Math.floor(rnd() * 4);
+    gs.draftGrades(students, settings({ gradeLimits: { 0: cap, 1: cap + 2 } }));
+    assert.ok(students.filter((s) => s.grade === 0).length <= cap);
+    assert.ok(students.filter((s) => s.grade === 1).length <= cap + 2);
+    assert.ok(gs.averagePoints(students) <= 3.3 + 1e-9);
+    const sorted = gs.byScore(students);
+    for (let j = 1; j < sorted.length; j++) {
+      if (sorted[j - 1].total > sorted[j].total) assert.ok(sorted[j - 1].grade <= sorted[j].grade);
+    }
+  }
+});
+
+test('grade limits: a tie bigger than the limit moves down together', () => {
+  const students = makeClass([95, 95, 95, 95, 80, 70, 60]);
+  gs.draftGrades(students, settings({ gradeLimits: { 0: 3 } }));
+  assert.equal(students.filter((s) => s.grade === 0).length, 0);
+  assert.equal(new Set(students.slice(0, 4).map((s) => s.grade)).size, 1);
+});

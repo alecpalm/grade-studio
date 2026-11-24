@@ -52,6 +52,7 @@ const GradeStudioEngine = (() => {
     highestGrade: 0, // best grade the draft may give (index into GRADES; 0 = A+)
     lowestGrade: GRADES.length - 1, // worst grade the draft may give (12 = F)
     setGrades: {}, // grades the professor fixed by exam ID, e.g. { "4102": 3 } for B+
+    gradeLimits: {}, // at most this many students may get a grade, e.g. { 0: 3 } for "only 3 A+"
   };
 
   /**
@@ -126,7 +127,12 @@ const GradeStudioEngine = (() => {
     if (!others.length) return;
     if (!fixed.length) return draftFree(students, settings);
     const budget = settings.maxAverage * students.length - fixed.reduce((sum, s) => sum + points(s.grade), 0);
-    draftFree(others, { ...settings, maxAverage: budget / others.length });
+    // Fixed students use up their grade's limit first.
+    const gradeLimits = {};
+    for (const [g, max] of Object.entries(settings.gradeLimits || {})) {
+      gradeLimits[g] = Math.max(0, max - fixed.filter((s) => s.grade === +g).length);
+    }
+    draftFree(others, { ...settings, maxAverage: budget / others.length, gradeLimits });
   }
 
   /**
@@ -148,6 +154,13 @@ const GradeStudioEngine = (() => {
    *
    * Both loops stop after 500 steps as a safety limit. No grade goes above
    * settings.highestGrade or below settings.lowestGrade (for example, "no A+").
+   *
+   * settings.gradeLimits caps how many students may get a grade ("only 3 A+").
+   * After the first draft, a grade over its limit moves its lowest-scoring group
+   * down one step until it fits, and neither loop moves a group into a grade that
+   * would go over its limit. A group of tied students moves as one, so a tie can
+   * leave fewer than the limit (four students tied for the top with "only 3 A+"
+   * all get an A).
    */
   function draftFree(students, settings) {
     const highest = settings.highestGrade ?? 0;
@@ -164,6 +177,18 @@ const GradeStudioEngine = (() => {
       if (i > 0) group.grade = Math.max(group.grade, groups[i - 1].grade);
     });
 
+    const limits = settings.gradeLimits || {};
+    const countAt = (gradeIndex) => groups.reduce((n, g) => n + (g.grade === gradeIndex ? g.students.length : 0), 0);
+    const fits = (group, gradeIndex) => limits[gradeIndex] === undefined || countAt(gradeIndex) + group.students.length <= limits[gradeIndex];
+
+    // Grade limits: move the lowest-scoring group out of any grade that has too many students.
+    for (let g = highest; g < lowest; g++) {
+      while (limits[g] !== undefined && countAt(g) > limits[g]) {
+        const last = [...groups].reverse().find((group) => group.grade === g);
+        last.grade = g + 1;
+      }
+    }
+
     const totalPoints = () => groups.reduce((sum, g) => sum + g.students.length * points(g.grade), 0);
     const limit = settings.maxAverage * n;
     // How far a group would be from its target at a given grade (squared, weighted by group size).
@@ -175,7 +200,7 @@ const GradeStudioEngine = (() => {
       let best = null;
       groups.forEach((group, i) => {
         const below = groups[i + 1];
-        const canLower = group.grade < lowest && (!below || group.grade + 1 <= below.grade);
+        const canLower = group.grade < lowest && (!below || group.grade + 1 <= below.grade) && fits(group, group.grade + 1);
         if (!canLower) return;
         const pointsRemoved = group.students.length * (points(group.grade) - points(group.grade + 1));
         const costPerPoint = (miss(group, group.grade + 1) - miss(group, group.grade)) / pointsRemoved;
@@ -192,7 +217,7 @@ const GradeStudioEngine = (() => {
       let best = null;
       groups.forEach((group, i) => {
         const above = groups[i - 1];
-        const canRaise = group.grade > highest && (!above || above.grade <= group.grade - 1);
+        const canRaise = group.grade > highest && (!above || above.grade <= group.grade - 1) && fits(group, group.grade - 1);
         if (!canRaise) return;
         const pointsAdded = group.students.length * (points(group.grade - 1) - points(group.grade));
         if (pointsAdded > room + EPS) return;
@@ -488,7 +513,8 @@ if (typeof document !== 'undefined') (() => {
   /**
    * The page Gemini makes may hold one line of settings the professor asked for:
    *   const SET = { "maxAverage": 3.3, "keepTiesTogether": true, "closeScoreGap": 0,
-   *                 "highestGrade": "A", "lowestGrade": "C", "setGrades": { "4102": "B+" } };
+   *                 "highestGrade": "A", "lowestGrade": "C", "setGrades": { "4102": "B+" },
+   *                 "gradeLimits": { "A+": 3 } };
    * Every key is optional. Anything that can't be used is listed on screen, never guessed.
    * These settings never change a score, only how grades are drafted.
    *
@@ -516,7 +542,13 @@ if (typeof document !== 'undefined') (() => {
       else if (key === 'closeScoreGap' && Number.isFinite(+value) && +value >= 0 && +value <= 20) { out.closeScoreGap = +value; if (+value) asked.push(`scores within ${+value} points kept together`); }
       else if (key === 'highestGrade' && gradeIndex(value) >= 0) { out.highestGrade = gradeIndex(value); if (out.highestGrade > 0) asked.push(`no grade above ${GRADES[out.highestGrade].letter}`); }
       else if (key === 'lowestGrade' && gradeIndex(value) >= 0) { out.lowestGrade = gradeIndex(value); if (out.lowestGrade < GRADES.length - 1) asked.push(`no grade below ${GRADES[out.lowestGrade].letter}`); }
-      else if (key === 'setGrades' && value && typeof value === 'object') {
+      else if (key === 'gradeLimits' && value && typeof value === 'object') {
+        out.gradeLimits = {};
+        for (const [letter, max] of Object.entries(value)) {
+          if (gradeIndex(letter) >= 0 && Number.isInteger(+max) && +max >= 0) { out.gradeLimits[gradeIndex(letter)] = +max; asked.push(`at most ${+max} ${GRADES[gradeIndex(letter)].letter}`); }
+          else ignored.push(`${letter}: ${JSON.stringify(max)}`);
+        }
+      } else if (key === 'setGrades' && value && typeof value === 'object') {
         out.setGrades = {};
         for (const [id, letter] of Object.entries(value)) {
           if (gradeIndex(letter) >= 0) { out.setGrades[String(id).trim()] = gradeIndex(letter); asked.push(`${id} set to ${GRADES[gradeIndex(letter)].letter}`); }
@@ -534,7 +566,7 @@ if (typeof document !== 'undefined') (() => {
   const state = { ...DEFAULT_SETTINGS, ...PAGE.settings, students: [], handEdited: false };
   const settings = () => ({
     maxAverage: state.maxAverage, keepTiesTogether: state.keepTiesTogether, closeScoreGap: state.closeScoreGap,
-    highestGrade: state.highestGrade, lowestGrade: state.lowestGrade, setGrades: state.setGrades,
+    highestGrade: state.highestGrade, lowestGrade: state.lowestGrade, setGrades: state.setGrades, gradeLimits: state.gradeLimits,
   });
   const START_TEXT = $('#meta').textContent;
   let sliderTimer = null;
@@ -777,7 +809,7 @@ if (typeof document !== 'undefined') (() => {
   // Reset: back to the default settings (3.30, ties together, full grade range, no fixed grades) and a fresh draft.
   // The scores stay loaded. Requests made in Gemini are dropped too; ask Gemini again to bring them back.
   $('#reset').onclick = () => {
-    Object.assign(state, DEFAULT_SETTINGS, { setGrades: {}, handEdited: false });
+    Object.assign(state, DEFAULT_SETTINGS, { setGrades: {}, gradeLimits: {}, handEdited: false });
     PAGE.asked = [];
     PAGE.ignored = [];
     redraft();

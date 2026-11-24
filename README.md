@@ -43,6 +43,7 @@ const SET={"maxAverage":3.3,"highestGrade":"A","lowestGrade":"C","keepTiesTogeth
 - **`maxAverage`** sets the maximum. The app also reads "curve" or "target" as the maximum, since professors often say that.
 - **`chart`**: `"bars"` shows students per grade as bars instead of one dot per student. The professor can also switch with the Dots / Bars toggle.
 - **`course`** only adds the course name to the title.
+- **`gradeLimits`** caps how many students may get a grade, for example `{"A+": 3}` for "only 3 A+'s". A group of tied students moves as one, so a tie can leave fewer than the limit.
 - **`setGrades`** fixes specific students' grades. Their grade points come out of the class budget first, so the whole class still stays at or under the maximum.
 - Settings never change a score.
 - The app lists every request that changes the defaults at the top. Anything it can't use (a misspelled grade, an exam ID not in the class) is listed, not guessed.
